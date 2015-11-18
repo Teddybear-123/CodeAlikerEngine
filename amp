@@ -1,0 +1,581 @@
+module datapath (clock, reset, sel_node, sel_line, ReadBus1, ReadBus2, 
+ sel_node_max, sel_itra_count,sel_parent, sel_daughter_count,
+ sel_sel_daugterweight, sel_workingmem_address, sel_write_to_workingmem, 
+ sel_value_to_workingmem, ReadBus1_working, ReadBus2_working, sel_WE, RST,
+ sel_initilization, sel_128update, 
+ // input
+input_ReadBus,// SRAM
+sel_input_WA,// c
+sel_input_RB,//c
+sel_start,//c
+ //output 
+sel_output_node,//c
+sel_output_WA1,//c
+sel_output_WA2,//c
+sel_output_WV, //[2:0] c
+sel_output_WE, //c
+ flag_change_bellman,
+ 
+ // all outputs from data path 
+ ReadAddress1, ReadAddress2, flag_itra, flag_stop, ReadAddress1_working, 
+ ReadAddress2_working, WriteBus_working, WriteAddress_working, WE_working,
+ flag_infinity_done, flag_daughter_count, flag_update, flag_equal7,
+ // input
+ input_ReadAddress,// SRAM
+ flag_start,//c
+ //output
+ flag_done, //c
+ flag_0andFF, //c
+ output_WE, // SRAM op
+ output_write_value, // SRAM op 15:0
+ output_write_address// SRAM op 13:0
+ );
+ 
+
+input clock;
+input reset;
+input [127:0] ReadBus1;
+input [127:0] ReadBus2;
+input [1:0] sel_node;
+input [1:0] sel_line;
+input sel_node_max;
+input [1:0]sel_itra_count;
+input sel_parent;
+input [1:0]sel_daughter_count;
+input [1:0]sel_sel_daugterweight;
+//new
+input sel_workingmem_address;
+input sel_write_to_workingmem;
+input sel_value_to_workingmem;
+input [127:0]ReadBus1_working;
+input [127:0]ReadBus2_working;
+input [1:0]sel_WE;
+input RST;
+// large
+input [1:0]sel_initilization; //S1, S0
+input sel_128update;
+// input
+input wire [7:0] input_ReadBus;// SRAM
+input [1:0] sel_input_WA;// c
+input [1:0] sel_input_RB;//c
+input sel_start;//c
+//output 
+input wire sel_output_node;
+input wire sel_output_WA1;
+input wire sel_output_WA2;
+input wire [2:0] sel_output_WV;
+input wire sel_output_WE;
+
+
+
+output reg [12:0] ReadAddress1;
+output reg [12:0] ReadAddress2;
+output reg flag_itra;
+output reg flag_stop;
+//new
+output reg [12:0]ReadAddress1_working;
+output reg [12:0]ReadAddress2_working;
+output reg [127:0]WriteBus_working;
+output reg [12:0]WriteAddress_working;
+output reg WE_working;
+output reg flag_infinity_done;
+output reg flag_daughter_count;
+output reg flag_update;
+output reg flag_equal7;
+// input
+output reg [9:0] input_ReadAddress;
+output reg flag_start;
+// output to be written
+output reg flag_done;
+output reg flag_0andFF;
+output reg output_WE; // SRAM op
+output reg [15:0]output_write_value; // SRAM op
+output reg [13:0]output_write_address;
+
+//reg output_read1=1'b0; //temporary
+//reg output_read2=1'b0;
+
+reg [127:0] graph_data1; // input from the graph stored in reg 
+reg [127:0] graph_data2;
+reg [12:0]count_node;
+reg [12:0]itra_count;
+reg [7:0]parent_node;
+reg [7:0]number_of_daughters;
+reg [2:0]sel_daughter_weight;
+reg [7:0]reg_daughter;
+reg [7:0]reg_weight;
+//new
+reg [7:0]reg_dealyed_weight;
+reg [7:0]reg_dealyed_parent;
+reg [7:0]reg_dealyed_daughter;
+output reg flag_change_bellman;
+reg [7:0]Source; //=8'b00000000;// input
+reg [127:0]working_data1;
+reg [127:0]working_data2;
+reg update_value_selection;
+reg [63:0]data_for_calculation;
+// large
+reg [127:0]reg_infinity128;
+reg reg_infinitybit_parent;
+reg reg_infinitybit_daughter;
+reg reg128;
+// input;
+reg [7:0] Destination;
+reg [7:0] reg_bit;
+// large
+reg [12:0]reg_output_node;
+
+
+
+wire WE_wire;
+
+assign WE_wire=WE_working;
+
+always@(posedge clock)
+begin
+graph_data1<=ReadBus1; // graph read bus input given to a reg
+graph_data2<=ReadBus2;
+reg_dealyed_weight<=reg_weight; // weight delay
+reg_dealyed_parent<=parent_node; // delayed parent
+working_data1<=ReadBus1_working; // working read bus input given to a reg
+working_data2<=ReadBus2_working;
+reg_dealyed_daughter<=reg_daughter-1'b1; // delayed daughter
+////////// large infinity
+//reg_infinitybit_parent<=reg_infinity128[parent_node-1'b1];
+//reg_infinitybit_daughter<=reg_infinity128[reg_daughter-1'b1];
+//reg_infinity128[reg_dealyed_daughter]<=reg128;
+end
+
+//input////////////////////////////////////////////////
+
+always@(posedge clock) 
+begin // case statement for sel_start
+	case(sel_start)
+		1'b0:flag_start=1'b0;
+		1'b1:flag_start=1'b1;
+	endcase
+end
+
+always@(posedge clock) 
+begin // Source
+	if(sel_input_RB==2'b00)
+		Source<=input_ReadBus;
+		//Source<=8'b00000101;
+	else	
+		Source<=Source; 
+end
+
+always@(posedge clock) 
+begin // Destination
+	if(sel_input_RB==2'b01)
+		Destination<=input_ReadBus;
+	else	
+		Destination<=Destination;
+	
+end
+
+
+always@(posedge clock) 
+begin // FF or zero
+	if(sel_input_RB==2'b10)
+		reg_bit<=input_ReadBus;
+	else	
+		reg_bit<=reg_bit;
+end
+
+always@(posedge clock) 
+begin // case statement for sel_input_WA
+	case(sel_input_WA)
+	2'b00:input_ReadAddress<=1'b0;
+	2'b01:input_ReadAddress<=input_ReadAddress+1'b1;
+	2'b10:input_ReadAddress<=input_ReadAddress;
+	2'b11:input_ReadAddress<=input_ReadAddress;
+	endcase
+	
+end
+
+//end of input datapath//////////////////////////////////////////////
+////////////////////////
+/////////// initialization MUX used in S0 S1
+always@(posedge clock) 
+begin
+	if(sel_initilization==2'b00)
+	 reg_infinity128<={128{1'b1}};
+
+	if(sel_initilization==2'b01)
+	 reg_infinity128[Source-1'b1]<=1'b0;
+	 
+	////////// large infinity
+reg_infinitybit_parent<=reg_infinity128[parent_node-1'b1];
+reg_infinitybit_daughter<=reg_infinity128[reg_daughter-1'b1];
+reg_infinity128[reg_dealyed_daughter]<=reg128;
+end
+
+///// for S2 onwards
+always@(posedge clock) 
+begin
+	// to select the node for which the iteration takes place
+	case(sel_node)
+		2'b00: ReadAddress1<=0;
+		2'b01: ReadAddress1<=ReadAddress1+1;
+		2'b10: ReadAddress1<=ReadAddress1;
+		2'b11: ReadAddress1<=0;
+	endcase
+end
+
+always@(posedge clock) 
+begin
+	// to select the LINE to be read for computation and iteration
+	case(sel_line)
+		2'b00: ReadAddress2<=graph_data1[63:0];
+		2'b01: ReadAddress2<=ReadAddress2;
+		2'b10: ReadAddress2<=ReadAddress2+1;
+		2'b11: ReadAddress2<=0;
+	endcase
+end
+
+always@(posedge clock) 
+begin	
+	// to calculate the maximum number of nodes
+	case(sel_node_max)
+		1'b0: count_node<=graph_data1[63:0]-2'b10;
+		1'b1: count_node<=count_node;
+	endcase
+end
+
+always@(*) 
+begin	
+	// flag to check one iteration
+	if(ReadAddress1==count_node)
+		flag_itra=1;
+	else 
+		flag_itra=0;
+end
+
+always@(posedge clock) 
+begin
+	//iteration count
+	case(sel_itra_count)
+		2'b00: itra_count<=0;
+		2'b01: itra_count<=itra_count;
+		2'b10: itra_count<=itra_count+2'b01;
+		2'b11: itra_count<=0;
+	endcase
+end
+
+always@(*) 
+begin
+	//stop flag
+	if(itra_count==count_node+1'b1)
+		flag_stop=1;
+	else
+		flag_stop=0;
+end
+
+always@(posedge clock) 
+begin
+	// parent node mux
+	case(sel_parent)
+		1'b0: parent_node<=graph_data2[127:120];
+		1'b1: parent_node<=parent_node;
+	endcase
+end
+	
+always@(posedge clock) 
+begin
+	// to check and keep track of daughter count
+	case(sel_daughter_count)
+		2'b00: number_of_daughters<=graph_data2[119:112];
+		2'b01: number_of_daughters<=number_of_daughters;
+		2'b10: number_of_daughters<=number_of_daughters-2'b01;
+		2'b11: number_of_daughters<=number_of_daughters;
+	endcase
+end
+
+always@(*) 
+begin
+	if(number_of_daughters==1'b0)
+		flag_daughter_count=1'b1;
+	else
+		flag_daughter_count=1'b0;
+end
+
+always@(posedge clock) 
+begin	
+	// logic for sel_daughter_weight
+	case(sel_sel_daugterweight)
+		2'b00: sel_daughter_weight<=3'b000;
+		2'b01: sel_daughter_weight<=sel_daughter_weight;
+		2'b10: sel_daughter_weight<=sel_daughter_weight+3'b001;
+		2'b11: sel_daughter_weight<=3'b000;
+	endcase
+end
+
+always@(*)
+begin
+	if(sel_daughter_weight==3'b111) 
+		flag_equal7=1'b1;
+	else
+		flag_equal7=1'b0;
+end
+
+always@(posedge clock) 
+begin	
+	// to select the daughter that is to be taken for calculations
+	case(sel_daughter_weight)
+		3'b000:reg_daughter<=graph_data2[127:120];
+		3'b001:reg_daughter<=graph_data2[111:104];
+		3'b010:reg_daughter<=graph_data2[95:88];
+		3'b011:reg_daughter<=graph_data2[79:72];
+		3'b100:reg_daughter<=graph_data2[63:56];
+		3'b101:reg_daughter<=graph_data2[47:40];
+		3'b110:reg_daughter<=graph_data2[31:24];
+		3'b111:reg_daughter<=graph_data2[15:8];
+	endcase
+end
+
+always@(posedge clock) 
+begin
+	// to decide the weight needed for Bellman calculation
+	case(sel_daughter_weight)
+		3'b000:reg_weight<=graph_data2[119:112];
+		3'b001:reg_weight<=graph_data2[103:96];
+		3'b010:reg_weight<=graph_data2[87:80];
+		3'b011:reg_weight<=graph_data2[71:64];
+		3'b100:reg_weight<=graph_data2[55:48];
+		3'b101:reg_weight<=graph_data2[39:32];
+		3'b110:reg_weight<=graph_data2[23:16];
+		3'b111:reg_weight<=graph_data2[7:0];
+	endcase
+end
+
+always@(*) 
+begin
+	//ReadAddress1 output form datapath to working memory 
+	case(sel_workingmem_address)
+		1'b0:ReadAddress1_working=reg_daughter-1'b1;
+		1'b1:ReadAddress1_working=1'b0;
+	endcase
+end
+
+always@(*) 
+	begin
+	//ReadAddress1 output form datapath to working memory 
+	case(sel_workingmem_address)
+		1'b0:ReadAddress2_working=parent_node-1'b1;
+		1'b1:ReadAddress2_working=reg_output_node;// output edit
+	endcase
+end
+
+always@(*)
+	begin 
+	// wire for bellam and its calculation
+	data_for_calculation={{working_data2[127:64]}+{{56{reg_dealyed_weight[7]}},reg_dealyed_weight}};//
+	end
+
+always@(*) //
+	begin
+	case({reg_infinitybit_parent,reg_infinitybit_daughter}) // updated for large
+		2'b00: begin
+					// BELLMAN 
+					if (working_data1[127]==1'b0 && data_for_calculation[63]==1'b1)
+						flag_change_bellman=1'b1;
+						
+					else if(working_data1[127]==1'b1 && data_for_calculation[63]==1'b0)
+						flag_change_bellman=1'b0;
+					else
+						if(working_data1[127:64]>data_for_calculation)
+							flag_change_bellman=1'b1;
+						else
+							flag_change_bellman=1'b0;
+				end 
+		2'b01:flag_change_bellman=1'b1;
+		2'b10:flag_change_bellman=1'b0;
+		2'b11:flag_change_bellman=1'b0;
+	endcase
+	end
+/*if (working_data1[127:0]=={128{1'b1}})
+						flag_change_bellman=1'b1;
+					else //if (working_data1[127:64]!={64{1'b1}})
+						begin*
+					// BELLMAN 
+					if(working_data1[127]==1'b0 && data_for_calculation[63]==1'b0)
+						begin
+							if(working_data1[127:64]>data_for_calculation)
+								flag_change_bellman=1'b1;
+							else
+								flag_change_bellman=1'b0;
+						end 
+					else if(working_data1[127]==1'b1 && data_for_calculation[63]==1'b1)
+						begin
+							if(working_data1[127:64]>data_for_calculation)
+								flag_change_bellman=1'b1;
+							else
+								flag_change_bellman=1'b0;
+						end 
+		
+					else if(working_data1[127]==1'b1 && data_for_calculation[63]==1'b0)
+						flag_change_bellman=1'b0;
+		
+					else if (working_data1[127]==1'b0 && data_for_calculation[63]==1'b1)
+						flag_change_bellman=1'b1;*/
+
+/*always@(*) 
+begin
+	// BELLMAN
+	if(working_data1[127:64]>working_data2[127:64]+{{56{reg_dealyed_weight[7]}},reg_dealyed_weight})
+		flag_change_bellman=1'b1;
+	else
+		flag_change_bellman=1'b0;
+end
+*/
+
+always@(posedge clock) 
+begin
+	// write enable update
+	case(sel_WE)
+		2'b00:WE_working<=1'b1;
+		2'b01:WE_working<=1'b0;
+		2'b10:WE_working<=flag_change_bellman;
+		2'b11:WE_working<=1'b0;
+	endcase
+end
+
+always@(posedge clock) // updated for large from 2 bit to 1
+begin 
+	// Write address for working memory
+	case(sel_write_to_workingmem)
+		1'b0:WriteAddress_working<=Source-1'b1;
+		1'b1:WriteAddress_working<=reg_dealyed_daughter;
+	/*	2'b00:WriteAddress_working<=1'b0;
+		2'b01:WriteAddress_working<=Source-1'b1;
+		2'b10:WriteAddress_working<=WriteAddress_working+1'b1;
+		2'b11:WriteAddress_working<=reg_dealyed_daughter;*/
+	endcase
+end
+
+always@(*) 
+begin
+	if(WriteAddress_working+1'b1==8'b10000000)
+		flag_infinity_done=1'b1;
+	else
+		flag_infinity_done=1'b0;
+end
+
+always@(posedge clock) // update for large from 2 to 1 bit
+begin
+	// Write address for working memory
+	case(sel_value_to_workingmem)
+		1'b0:WriteBus_working<={128{1'b0}};
+		1'b1:WriteBus_working<={{working_data2[127:64]+{{56{reg_dealyed_weight[7]}},reg_dealyed_weight}},{{56{1'b0}},reg_dealyed_parent}};//
+	/*	2'b00:WriteBus_working<={128{1'b1}};
+		2'b01:WriteBus_working<={128{1'b0}};
+		2'b10:WriteBus_working<={{working_data2[127:64]+{{56{reg_dealyed_weight[7]}},reg_dealyed_weight}},{{56{1'b0}},reg_dealyed_parent}};//
+		2'b11:WriteBus_working<=1'b0; */
+	endcase
+end
+
+always@(*)
+begin
+	update_value_selection=RST&&(flag_update||WE_working);
+end 
+
+//flag_equal7
+
+always@(posedge clock)
+begin
+	case(update_value_selection)
+		1'b0:flag_update<=1'b0;
+		1'b1:flag_update<=1'b1;
+	endcase
+end
+
+always@(*)
+begin
+	case(sel_128update)
+		1'b0:begin
+				if((reg_infinitybit_parent==1'b1)&&(reg_infinitybit_daughter==1'b1))
+					reg128=1'b1;
+				else 
+					reg128=1'b0;
+			 end
+		1'b1:reg128=reg_infinity128[reg_dealyed_daughter];
+	endcase
+end
+
+//output//////////////////////////////////////////////////////////
+/*
+input wire sel_output_node;
+input wire sel_output_WA1;
+input wire sel_output_WA2;
+input [2:0]wire sel_output_WV;
+input wire sel_output_WE;
+
+// not using the Read part of OUTPUT
+output reg flag_done;
+output reg flag_0andFF;
+output reg output_WE; // SRAM op
+output reg [15:0]output_write_value; // SRAM op
+output reg [13:0]output_write_address;
+reg [12:0]reg_output_node;*/
+
+
+
+always@(*)
+begin // case statement sel_output_node 
+	case(sel_output_node)
+		1'b0:reg_output_node=Destination-1'b1;
+		1'b1:reg_output_node=working_data2[12:0]-1'b1;
+	endcase
+end
+
+
+always@(*)
+begin // case statement sel_output_node 
+	if(Source==ReadBus2_working[15:0])
+		flag_done=1'b1;
+	else
+		flag_done=1'b0;
+end
+
+always@(*)
+begin // case statement sel_output_node 
+	if(reg_bit==1'b0)
+		flag_0andFF=1'b0;
+	else
+		flag_0andFF=1'b1;
+end
+
+always@(posedge clock)
+begin // case statement sel_output_WV 
+	case(sel_output_WV)
+	3'b000:output_write_value<=ReadBus2_working[79:64];
+	3'b001:output_write_value<=Destination;
+	3'b010:output_write_value<=ReadBus2_working[15:0];
+	3'b011:output_write_value<={128{1'b1}};
+	3'b100:output_write_value<=8'b00000000;
+	default: output_write_value<=output_write_value;
+	endcase
+end
+
+always@(posedge clock)
+begin // case statement sel_output_WE 
+	case(sel_output_WE)
+	1'b0:output_WE=1'b0;
+	1'b1:output_WE=1'b1;
+	endcase
+end
+
+always@(posedge clock)
+begin // case statement sel_output_WA1 and sel_output_WA2
+	if(sel_output_WA1==1'b1)
+		output_write_address=1'b0;
+	else if(sel_output_WA2==1'b0)
+		output_write_address=output_write_address+1'b1;
+	else
+		output_write_address=output_write_address;
+end
+
+//output end//////////////////////////////////////////////////////////
+
+endmodule
